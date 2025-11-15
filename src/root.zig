@@ -10,6 +10,87 @@ pub fn panic(comptime format: []const u8, args: anytype) noreturn {
 pub const lane = @import("lane.zig");
 pub const Arena = @import("Arena.zig");
 
+pub const SclassPool = struct {
+    arena: Arena,
+    free: [sclass_count]?*Header = @splat(null),
+
+    const max_alloc_size = 1024 * 1024 * 256;
+    const page_size = 1024;
+    const sclass_offset = std.math.log2_int(usize, page_size);
+    const sclass_count = std.math.log2_int(usize, max_alloc_size) - sclass_offset;
+
+    const Header = struct {
+        next: ?*Header,
+    };
+
+    pub fn sclassOf(size: usize) usize {
+        std.debug.assert(size <= max_alloc_size);
+        return std.math.log2_int_ceil(usize, size) -| sclass_offset;
+    }
+
+    pub fn staleMemory(self: *SclassPool) usize {
+        var total: usize = 0;
+
+        var unit: usize = page_size;
+        for (self.free) |header| {
+            var cursor = header;
+            while (cursor) |hdr| {
+                total += unit;
+                cursor = hdr.next;
+            }
+            unit *= 2;
+        }
+
+        return total;
+    }
+
+    pub fn allocator(self: *SclassPool) std.mem.Allocator {
+        const alc_impl = enum {
+            fn alloc(ptr: *anyopaque, size: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+                const slf: *SclassPool = @ptrCast(@alignCast(ptr));
+                const alignm = @max(alignment.toByteUnits(), @alignOf(Header));
+                std.debug.assert(alignm <= page_size);
+                const size_class = sclassOf(size);
+
+                if (slf.free[size_class]) |fr| {
+                    slf.free[size_class] = fr.next;
+                    return @ptrCast(fr);
+                }
+
+                return slf.arena.allocator().rawAlloc(
+                    @as(usize, 1) << @intCast(size_class + sclass_offset),
+                    std.mem.Alignment.fromByteUnits(alignm),
+                    ret_addr,
+                );
+            }
+            fn free(ptr: *anyopaque, mem: []u8, _: std.mem.Alignment, _: usize) void {
+                @memset(mem, undefined);
+                const slf: *SclassPool = @ptrCast(@alignCast(ptr));
+                const size_class = sclassOf(mem.len);
+                const header: *Header = @ptrCast(@alignCast(mem.ptr));
+                header.next = slf.free[size_class];
+                slf.free[size_class] = header;
+            }
+            fn remap(_: *anyopaque, mem: []u8, _: std.mem.Alignment, new_len: usize, _: usize) ?[*]u8 {
+                return if (sclassOf(mem.len) == sclassOf(new_len)) return mem.ptr else null;
+            }
+            fn resize(_: *anyopaque, mem: []u8, _: std.mem.Alignment, new_len: usize, _: usize) bool {
+                return sclassOf(mem.len) == sclassOf(new_len);
+            }
+        };
+
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .alloc = alc_impl.alloc,
+                .free = alc_impl.free,
+                .remap = alc_impl.remap,
+                .resize = alc_impl.resize,
+            },
+        };
+    }
+};
+
 const IdRepr = u32;
 
 pub fn EnumId(comptime T: type) type {

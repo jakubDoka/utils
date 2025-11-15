@@ -68,6 +68,7 @@ pub fn subslice(self: *Arena, capacity: usize) Arena {
 }
 
 pub fn scrath(except: ?*anyopaque) Scratch {
+    if (std.debug.runtime_safety) std.debug.assert(inited);
     for (&scratch) |*slt| if (@as(*anyopaque, slt) != except)
         return slt.checkpoint();
     unreachable;
@@ -129,6 +130,13 @@ pub fn dupe(self: *Arena, comptime Elem: type, values: []const Elem) []Elem {
     const new = self.alloc(Elem, values.len);
     @memcpy(new, values);
     return new;
+}
+
+pub fn dupeZ(self: *Arena, comptime Elem: type, values: []const Elem) [:0]Elem {
+    const new = self.alloc(Elem, values.len + 1);
+    @memcpy(new[0..values.len], values);
+    new[values.len] = 0;
+    return new[0..values.len :0];
 }
 
 pub fn allocAligned(self: *Arena, comptime T: type, count: usize, comptime alignment: usize) []align(alignment) T {
