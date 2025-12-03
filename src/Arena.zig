@@ -170,3 +170,7 @@ pub fn makeArrayList(self: *Arena, comptime T: type, cap: usize) std.ArrayList(T
 pub fn create(self: *Arena, comptime T: type) *T {
     return &self.alloc(T, 1).ptr[0];
 }
+
+pub fn print(self: *Arena, comptime fmt: []const u8, args: anytype) []u8 {
+    return std.fmt.allocPrint(self.allocator(), fmt, args) catch unreachable;
+}
