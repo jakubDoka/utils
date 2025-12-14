@@ -611,11 +611,16 @@ pub fn TimeMetrics(comptime StatNames: type) type {
 
             inline for (std.meta.fields(Stats)) |f| {
                 const fvl = @as(f64, @floatFromInt(@field(self.stats, f.name)));
-                try out.print("  {s:<" ++ max_name_len ++ "}: ({d:>6.2}%) {d:>10.9}s\n", .{
-                    f.name,
-                    (fvl / ftotal) * 100,
-                    fvl / std.time.ns_per_s,
-                });
+                if (fvl != 0) {
+                    try out.print(
+                        "  {s:<" ++ max_name_len ++ "}: ({d:>6.2}%) {d:>10.9}s\n",
+                        .{
+                            f.name,
+                            (fvl / ftotal) * 100,
+                            fvl / std.time.ns_per_s,
+                        },
+                    );
+                }
             }
         }
     };
