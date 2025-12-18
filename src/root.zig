@@ -9,6 +9,7 @@ pub fn panic(comptime format: []const u8, args: anytype) noreturn {
 
 pub const lane = @import("lane.zig");
 pub const Arena = @import("Arena.zig");
+pub const RingBuf = @import("RingBuf.zig");
 
 pub const SclassPool = struct {
     arena: Arena,
@@ -625,6 +626,59 @@ pub fn TimeMetrics(comptime StatNames: type) type {
         }
     };
 }
+
+pub const DynLib = if (@import("builtin").os.tag == .windows) struct {
+    dll: std.os.windows.HMODULE,
+
+    pub fn init(path: []const u8) !DynLib {
+        var tmp = Arena.scrath(null);
+        defer tmp.deinit();
+
+        return .{
+            .dll = try std.os.windows.LoadLibraryW(
+                try std.unicode.wtf8ToWtf16LeAllocZ(tmp.arena.allocator(), path),
+            ),
+        };
+    }
+
+    pub fn lookup(self: *DynLib, comptime T: type, name: []const u8) ?T {
+        var tmp = Arena.scrath(null);
+        defer tmp.deinit();
+
+        const sym = std.os.windows.kernel32.GetProcAddress(self.dll, tmp.arena.dupeZ(u8, name));
+        if (sym == null) return null;
+        return @ptrCast(sym.?);
+    }
+
+    pub fn deinit(self: *DynLib) void {
+        _ = std.os.windows.FreeLibrary(self.dll);
+    }
+} else struct {
+    dll: *anyopaque,
+
+    pub fn init(path: []const u8) !DynLib {
+        var tmp = Arena.scrath(null);
+        defer tmp.deinit();
+
+        return .{
+            .dll = std.c.dlopen(tmp.arena.dupeZ(u8, path), std.c.RTLD{ .NOW = true }) orelse
+                return error.MissingInit,
+        };
+    }
+
+    pub fn lookup(self: *DynLib, comptime T: type, name: []const u8) ?T {
+        var tmp = Arena.scrath(null);
+        defer tmp.deinit();
+
+        const sym = std.c.dlsym(self.dll, tmp.arena.dupeZ(u8, name));
+        if (sym == null) return null;
+        return @ptrCast(sym.?);
+    }
+
+    pub fn deinit(self: *DynLib) void {
+        _ = std.c.dlclose(self.dll);
+    }
+};
 
 test {
     std.testing.refAllDeclsRecursive(@This());
