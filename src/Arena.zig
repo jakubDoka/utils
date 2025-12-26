@@ -59,7 +59,7 @@ pub fn getCapacity(self: *Arena) usize {
 
 pub fn subslice(self: *Arena, capacity: usize) Arena {
     const cap = std.mem.alignBackward(usize, capacity, page_size);
-    const ptr = self.allocRaw(page_size, cap);
+    const ptr = self.allocRaw(page_size, cap).?;
     return .{
         .start = @alignCast(ptr),
         .end = @alignCast(ptr + cap),
@@ -156,10 +156,10 @@ pub fn allocZ(self: *Arena, comptime T: type, count: usize) [:0]T {
     return ptr[0..count :0];
 }
 
-pub fn allocRaw(self: *Arena, alignment: usize, size: usize) [*]u8 {
+pub fn allocRaw(self: *Arena, alignment: usize, size: usize) ?[*]u8 {
     self.pos = @ptrFromInt(std.mem.alignForward(usize, @intFromPtr(self.pos), alignment));
     self.pos += size;
-    std.debug.assert(@intFromPtr(self.end) >= @intFromPtr(self.pos));
+    if (@intFromPtr(self.end) < @intFromPtr(self.pos)) return null;
     return self.pos - size;
 }
 

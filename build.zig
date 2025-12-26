@@ -13,6 +13,7 @@ pub fn build(b: *std.Build) void {
     const check = b.step("check", "Run the tests");
 
     const tests = b.addTest(.{ .root_module = utils });
+    tests.linkLibC();
 
     check.dependOn(&tests.step);
 
